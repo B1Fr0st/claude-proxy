@@ -1,5 +1,6 @@
 import json
 import os
+import re
 
 import httpx
 from fastapi import FastAPI, Request, Response
@@ -17,6 +18,10 @@ _STRIP_HEADERS = {"x-api-key", "authorization"}
 # first system block — OAuth tokens from `claude setup-token` only get
 # haiku without it.
 CLAUDE_CODE_SYSTEM = "You are Claude Code, Anthropic's official CLI for Claude."
+
+# Server-side tool types are versioned like "web_search_20250305"; their
+# matching anthropic-beta header is "web-search-2025-03-05". We derive it.
+_SERVER_TOOL_TYPE_RE = re.compile(r"^([a-z_]+)_(\d{4})(\d{2})(\d{2})$")
 
 _token: str = ""
 
@@ -41,20 +46,49 @@ def _auth_headers() -> dict[str, str]:
     }
 
 
-def _build_upstream_headers(incoming: dict[str, str]) -> dict[str, str]:
+def _build_upstream_headers(
+    incoming: dict[str, str], extra_betas: set[str] = frozenset()
+) -> dict[str, str]:
     headers = _auth_headers()
 
     if "anthropic-version" in incoming:
         headers["anthropic-version"] = incoming["anthropic-version"]
 
+    ours = set(headers["anthropic-beta"].split(","))
+    theirs: set[str] = set()
     if "anthropic-beta" in incoming:
-        ours = set(headers["anthropic-beta"].split(","))
         theirs = set(incoming["anthropic-beta"].split(","))
-        headers["anthropic-beta"] = ",".join(b for b in ours | theirs if b)
+    merged = (ours | theirs | set(extra_betas)) - {""}
+    headers["anthropic-beta"] = ",".join(sorted(merged))
 
     headers["content-type"] = "application/json"
     headers["accept"] = "application/json, text/event-stream"
     return headers
+
+
+def _detect_tool_betas(body: bytes) -> set[str]:
+    """Find server-side tools declared in the request and return the
+    anthropic-beta headers Anthropic requires for them (web_search,
+    code_execution, web_fetch, etc.)."""
+    try:
+        data = json.loads(body)
+    except Exception:
+        return set()
+    tools = data.get("tools")
+    if not isinstance(tools, list):
+        return set()
+    betas: set[str] = set()
+    for tool in tools:
+        if not isinstance(tool, dict):
+            continue
+        t = tool.get("type")
+        if not isinstance(t, str):
+            continue
+        m = _SERVER_TOOL_TYPE_RE.match(t)
+        if m:
+            name, y, mo, d = m.groups()
+            betas.add(f"{name.replace('_', '-')}-{y}-{mo}-{d}")
+    return betas
 
 
 def _incoming_headers(request: Request) -> dict[str, str]:
@@ -107,7 +141,8 @@ async def messages(request: Request):
     except Exception:
         pass
 
-    headers = _build_upstream_headers(dict(_incoming_headers(request)))
+    tool_betas = _detect_tool_betas(body)
+    headers = _build_upstream_headers(dict(_incoming_headers(request)), tool_betas)
     body = _inject_claude_code_system(body)
 
     if is_stream:
