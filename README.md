@@ -2,6 +2,9 @@
 
 A FastAPI proxy that turns a Claude Code OAuth token (from `claude setup-token`) into a local Anthropic-compatible API endpoint.
 
+Is this probably against TOS? Yeah.
+Is this gonna get you banned? Maybe!
+
 ## Run
 
 With Docker Compose:
