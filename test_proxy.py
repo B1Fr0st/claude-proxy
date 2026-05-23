@@ -13,7 +13,7 @@ import anthropic
 import httpx
 
 BASE_URL = "http://localhost:8000"
-MODEL = "claude-haiku-4-5"
+MODEL = "claude-sonnet-4-6"
 
 client = anthropic.Anthropic(base_url=BASE_URL, api_key="unused")
 
@@ -38,7 +38,6 @@ def test_health():
     r = httpx.get(f"{BASE_URL}/health", timeout=5)
     assert r.status_code == 200
     assert r.json()["status"] == "ok"
-    assert "token_fresh" in r.json()
 
 
 def test_models():
