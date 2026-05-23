@@ -1,4 +1,4 @@
-# claude-api
+# claude-proxy
 
 A FastAPI proxy that turns a Claude Code OAuth token (from `claude setup-token`) into a local Anthropic-compatible API endpoint.
 
