@@ -5,7 +5,6 @@ services:
     network_mode: "host"
     environment:
       CLAUDE_TOKEN: ${CLAUDE_TOKEN:?CLAUDE_TOKEN is required — run 'claude setup-token'}
-      HAIKU_API_KEY: ${HAIKU_API_KEY:-}
     restart: unless-stopped
     healthcheck:
       test:
