@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Proxy Sign-in</title>
+<style>
+  :root {
+    --bg: #f6f5f2; --card: #ffffff; --text: #1d1c1a; --muted: #6b6862;
+    --border: #e3e0da; --accent: #c96442; --ok: #2f7d4f; --warn: #b4442c;
+    --code: #f0eee9;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1a1918; --card: #242321; --text: #ecebe8; --muted: #a09d97;
+      --border: #3a3835; --accent: #e07b58; --ok: #5fbf85; --warn: #ec7a62;
+      --code: #2e2d2a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  }
+  main { max-width: 640px; margin: 0 auto; padding: 48px 16px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .lede { color: var(--muted); margin: 0 0 28px; }
+  .banner {
+    padding: 10px 14px; border-radius: 8px; margin-bottom: 20px;
+    border: 1px solid var(--border); background: var(--card);
+  }
+  .banner.error { border-color: var(--warn); color: var(--warn); }
+  .banner.ok { border-color: var(--ok); color: var(--ok); }
+  .card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 18px 20px; margin-bottom: 14px;
+  }
+  .row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .name { font-weight: 600; font-size: 16px; flex: 1; min-width: 120px; }
+  .pill {
+    font-size: 12px; padding: 2px 10px; border-radius: 999px; border: 1px solid currentColor;
+  }
+  .pill.on { color: var(--ok); }
+  .pill.off { color: var(--muted); }
+  .pill.bad { color: var(--warn); }
+  .detail { color: var(--muted); font-size: 13px; margin-top: 6px; }
+  .detail.error { color: var(--warn); }
+  button, .button {
+    font: inherit; font-size: 14px; padding: 7px 14px; border-radius: 8px; cursor: pointer;
+    border: 1px solid var(--border); background: transparent; color: var(--text);
+    text-decoration: none;
+  }
+  .primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .link { border: 0; padding: 0; color: var(--muted); text-decoration: underline; font-size: 13px; }
+  .manual { margin-top: 12px; display: none; }
+  .manual.open { display: block; }
+  .manual p { margin: 0 0 8px; font-size: 13px; color: var(--muted); }
+  input {
+    font: inherit; font-size: 14px; width: 100%; padding: 8px 10px; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--bg); color: var(--text); margin-bottom: 8px;
+  }
+  h2 { font-size: 15px; margin: 32px 0 10px; }
+  code {
+    font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--code);
+    padding: 1px 6px; border-radius: 4px; word-break: break-all;
+  }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  td { padding: 6px 0; vertical-align: top; }
+  td:first-child { color: var(--muted); padding-right: 16px; white-space: nowrap; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Connect your accounts</h1>
+  <p class="lede">Sign in once. Tokens are stored by the proxy and refreshed automatically.</p>
+  <div id="banner"></div>
+  <div id="providers"></div>
+
+  <h2>Endpoints</h2>
+  <table>
+    <tr><td>Anthropic API</td><td><code id="anthropic-url"></code></td></tr>
+    <tr><td>OpenAI API</td><td><code id="openai-url"></code></td></tr>
+  </table>
+</main>
+
+<script>
+const origin = location.origin;
+document.getElementById("anthropic-url").textContent = origin;
+document.getElementById("openai-url").textContent = origin + "/openai/v1";
+
+const banner = document.getElementById("banner");
+function showBanner(text, kind) {
+  banner.innerHTML = "";
+  if (!text) return;
+  const div = document.createElement("div");
+  div.className = "banner " + kind;
+  div.textContent = text;
+  banner.appendChild(div);
+}
+
+async function post(path, body) {
+  const r = await fetch(path, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body || {}),
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error((data.error && data.error.message) || data.detail || r.statusText);
+  return data;
+}
+
+function el(tag, attrs, children) {
+  const node = document.createElement(tag);
+  Object.assign(node, attrs || {});
+  for (const c of children || []) node.append(c);
+  return node;
+}
+
+function claudeManual() {
+  const box = el("div", { className: "manual" });
+  const input = el("input", { placeholder: "Paste the code from Anthropic here" });
+  const submit = el("button", { className: "primary", textContent: "Finish sign-in" });
+  submit.onclick = async () => {
+    try {
+      await post("/api/login/claude/code", { code: input.value });
+      showBanner("Claude connected.", "ok");
+      render();
+    } catch (e) { showBanner(e.message, "error"); }
+  };
+  box.append(
+    el("p", { textContent: "A new tab opened on Anthropic's site. After you approve, copy the code it shows and paste it here." }),
+    input, submit,
+  );
+  const toggle = el("button", { className: "link", textContent: "Callback not working? Sign in with a code instead" });
+  toggle.onclick = async () => {
+    try {
+      const { url } = await post("/api/login/claude/manual");
+      window.open(url, "_blank", "noopener");
+      box.classList.add("open");
+      input.focus();
+    } catch (e) { showBanner(e.message, "error"); }
+  };
+  return [el("div", { className: "detail" }, [toggle]), box];
+}
+
+function card(name, p) {
+  let pill;
+  if (p.error) pill = el("span", { className: "pill bad", textContent: "Reconnect needed" });
+  else if (p.connected) pill = el("span", { className: "pill on", textContent: "Connected" });
+  else pill = el("span", { className: "pill off", textContent: "Not connected" });
+
+  const actions = [];
+  if (p.connected || p.error) {
+    if (p.source === "oauth") {
+      const out = el("button", { textContent: "Disconnect" });
+      out.onclick = async () => {
+        try { await post(`/api/logout/${name}`); render(); }
+        catch (e) { showBanner(e.message, "error"); }
+      };
+      actions.push(out);
+    }
+  }
+  if (!p.connected || p.source === "env") {
+    actions.push(el("a", {
+      className: "button primary", href: `/login/${name}`,
+      textContent: p.source === "env" ? "Sign in instead" : "Sign in",
+    }));
+  }
+
+  const lines = [];
+  if (p.error) lines.push(el("div", { className: "detail error", textContent: p.error }));
+  else if (p.source === "env") lines.push(el("div", { className: "detail", textContent: "Using CLAUDE_TOKEN from the environment." }));
+  else if (p.connected) {
+    const who = [p.email, p.plan && p.plan[0].toUpperCase() + p.plan.slice(1)].filter(Boolean).join(" · ");
+    if (who) lines.push(el("div", { className: "detail", textContent: who }));
+  }
+  if (name === "claude" && !p.connected) lines.push(...claudeManual());
+
+  return el("div", { className: "card" }, [
+    el("div", { className: "row" }, [el("div", { className: "name", textContent: p.label }), pill, ...actions]),
+    ...lines,
+  ]);
+}
+
+async function render() {
+  const r = await fetch("/api/status");
+  const { providers } = await r.json();
+  const list = document.getElementById("providers");
+  list.replaceChildren(...Object.entries(providers).map(([name, p]) => card(name, p)));
+}
+
+const params = new URLSearchParams(location.search);
+if (params.get("error")) showBanner(params.get("error"), "error");
+else if (params.get("connected")) {
+  const label = { claude: "Claude", openai: "ChatGPT" }[params.get("connected")] || params.get("connected");
+  showBanner(label + " connected.", "ok");
+}
+if (params.toString()) history.replaceState(null, "", location.pathname);
+render();
+</script>
+</body>
+</html>

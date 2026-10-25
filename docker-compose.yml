@@ -2,9 +2,15 @@ services:
   claude-api:
     build: .
     container_name: claude-api
-    network_mode: "host"
+    ports:
+      - "127.0.0.1:8000:8000"
+      # OAuth callback port. Codex's sign-in only redirects to localhost:1455.
+      - "127.0.0.1:1455:1455"
     environment:
-      CLAUDE_TOKEN: ${CLAUDE_TOKEN:?CLAUDE_TOKEN is required — run 'claude setup-token'}
+      # Optional: a `claude setup-token` token, used until you sign in on the page.
+      CLAUDE_TOKEN: ${CLAUDE_TOKEN:-}
+    volumes:
+      - tokens:/data
     restart: unless-stopped
     healthcheck:
       test:
@@ -18,3 +24,6 @@ services:
       timeout: 5s
       retries: 3
       start_period: 5s
+
+volumes:
+  tokens:
